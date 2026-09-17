@@ -1,0 +1,87 @@
+.nf-login {
+  min-height: 100vh;
+  background: url('https://assets.nflxext.com/ffe/siteui/vlv3/9d3533b2-0e2b-40b2-95e0-ecd7979cc88b/a3873501-5b7c-4844-8ce9-0c58c39d3d17/IN-en-20230814-popsignuptwoweeks-perspective_alpha_website_large.jpg') center/cover no-repeat, #000;
+  position: relative;
+}
+
+.nf-login__overlay {
+  min-height: 100vh;
+  background: rgba(0,0,0,0.55);
+  display: flex;
+  flex-direction: column;
+}
+
+.nf-login__header { padding: 22px 4%; }
+
+.nf-login__box {
+  background: rgba(0,0,0,0.75);
+  padding: 60px 68px 40px;
+  border-radius: 4px;
+  width: 100%;
+  max-width: 450px;
+  margin: 20px auto 80px;
+}
+
+.nf-login__box h1 { font-size: 32px; margin: 0 0 28px 0; }
+
+.nf-login__error {
+  background: #e87c03;
+  color: #fff;
+  font-size: 14px;
+  padding: 10px 16px;
+  border-radius: 4px;
+  margin-bottom: 16px;
+}
+
+.nf-login__field { position: relative; margin-bottom: 16px; }
+.nf-login__field input {
+  width: 100%;
+  padding: 16px 20px 6px;
+  background: #333;
+  border: none;
+  border-bottom: 1px solid #8c8c8c;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 16px;
+}
+.nf-login__field input:focus { outline: none; padding-top: 20px; padding-bottom: 2px; }
+.nf-login__field label {
+  position: absolute;
+  left: 20px;
+  top: 16px;
+  color: #8c8c8c;
+  font-size: 16px;
+  pointer-events: none;
+  transition: all 0.15s ease;
+}
+.nf-login__field input:focus + label,
+.nf-login__field input:not(:placeholder-shown) + label {
+  top: 6px;
+  font-size: 11px;
+}
+
+.nf-login__submit {
+  width: 100%;
+  background: var(--netflix-red);
+  color: #fff;
+  padding: 14px;
+  border-radius: 4px;
+  font-size: 16px;
+  font-weight: 700;
+  margin: 22px 0 14px;
+}
+.nf-login__submit:hover { background: var(--netflix-red-dark); }
+
+.nf-login__helpers { display: flex; justify-content: space-between; font-size: 13px; color: #b3b3b3; }
+.nf-login__remember { display: flex; align-items: center; gap: 6px; }
+.nf-login__helpers a:hover { text-decoration: underline; }
+
+.nf-login__signup { color: #737373; font-size: 16px; margin-top: 60px; }
+.nf-login__link { background: none; color: #fff; font-size: 16px; }
+.nf-login__link:hover { text-decoration: underline; }
+
+.nf-login__captcha { font-size: 13px; color: #8c8c8c; margin-top: 14px; line-height: 1.5; }
+
+@media (max-width: 550px) {
+  .nf-login__box { padding: 40px 24px; margin: 0; max-width: 100%; min-height: 100vh; border-radius: 0; }
+}

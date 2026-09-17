@@ -1,0 +1,55 @@
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Roboto:wght@400;500;700;900&display=swap');
+
+:root {
+  --netflix-red: #e50914;
+  --netflix-red-dark: #b20710;
+  --netflix-black: #141414;
+  --netflix-black-pure: #000000;
+  --netflix-dark-gray: #181818;
+  --netflix-gray: #2a2a2a;
+  --netflix-light-gray: #808080;
+  --netflix-white: #ffffff;
+  --header-gradient: linear-gradient(180deg, rgba(0,0,0,0.7) 10%, rgba(0,0,0,0) 100%);
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--netflix-black);
+}
+
+body {
+  font-family: 'Roboto', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  color: var(--netflix-white);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+a { text-decoration: none; color: inherit; }
+button { font-family: inherit; cursor: pointer; border: none; }
+img { display: block; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--netflix-black); }
+::-webkit-scrollbar-thumb { background: #4d4d4d; border-radius: 5px; }
+
+.brand-logo {
+  font-family: 'Bebas Neue', sans-serif;
+  color: var(--netflix-red);
+  font-size: 32px;
+  letter-spacing: 1px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+:focus-visible {
+  outline: 2px solid var(--netflix-white);
+  outline-offset: 2px;
+}

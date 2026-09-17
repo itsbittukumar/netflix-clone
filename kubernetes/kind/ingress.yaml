@@ -1,0 +1,23 @@
+# Optional: only needed if you installed an ingress controller in kind
+# (e.g. `kind create cluster --config kind-config.yaml` with extraPortMappings
+# + ingress-nginx). If you're just using the NodePort service, comment/skip this.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: netflix-frontend-ingress
+  namespace: netflix-clone
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: netflix.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: netflix-frontend-svc
+                port:
+                  number: 80

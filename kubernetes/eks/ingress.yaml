@@ -1,0 +1,25 @@
+# Requires the AWS Load Balancer Controller installed on the EKS cluster.
+# This provisions an internet-facing ALB. Comment out / delete if you'd
+# rather expose the Service directly as type: LoadBalancer (classic ELB).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: netflix-frontend-ingress
+  namespace: netflix-clone
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+    alb.ingress.kubernetes.io/healthcheck-path: /healthz
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: netflix-frontend-svc
+                port:
+                  number: 80

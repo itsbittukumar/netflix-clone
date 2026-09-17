@@ -1,0 +1,34 @@
+# Used for the EC2 deployment target.
+# On the EC2 host: docker compose pull && docker compose up -d
+version: "3.9"
+
+services:
+  netflix-frontend:
+    image: ${IMAGE_NAME:-netflix-clone-frontend}:${IMAGE_TAG:-latest}
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_TMDB_API_KEY: ${VITE_TMDB_API_KEY}
+    container_name: netflix-clone-frontend
+    restart: unless-stopped
+    ports:
+      - "80:8080"
+    environment:
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+    # DevSecOps: run the container filesystem read-only where possible,
+    # drop unneeded Linux capabilities.
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL

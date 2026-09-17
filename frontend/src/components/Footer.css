@@ -1,0 +1,10 @@
+.nf-footer { background: #141414; color: #757575; padding: 60px 4% 40px; margin-top: 40px; }
+.nf-footer__inner { max-width: 950px; margin: 0 auto; }
+.nf-footer__questions { color: #b3b3b3; font-size: 16px; margin-bottom: 20px; }
+.nf-footer__grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px 20px; margin-bottom: 30px; }
+.nf-footer__grid ul { list-style: none; margin: 0; padding: 0; }
+.nf-footer__grid li { margin-bottom: 14px; font-size: 13px; }
+.nf-footer__grid a:hover { text-decoration: underline; }
+.nf-footer__lang { border: 1px solid #757575; color: #b3b3b3; background: transparent; padding: 8px 12px; font-size: 13px; margin-bottom: 20px; }
+.nf-footer__copy { font-size: 12px; max-width: 700px; line-height: 1.5; }
+@media (max-width: 700px) { .nf-footer__grid { grid-template-columns: repeat(2, 1fr); } }

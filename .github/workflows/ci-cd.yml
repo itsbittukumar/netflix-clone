@@ -1,0 +1,307 @@
+name: Netflix Clone - CI/CD (DevSecOps)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: netflix-clone-frontend
+  # Set this in repo Settings -> Secrets and vars -> Actions (or leave the
+  # build using the placeholder key; the UI still renders without it, it just
+  # won't pull real TMDB posters).
+  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+
+permissions:
+  contents: read
+  security-events: write   # needed to upload Trivy/CodeQL SARIF results
+
+jobs:
+  # ────────────────────────────────────────────────────────────
+  # 1) BUILD, LINT, UNIT TEST
+  # ────────────────────────────────────────────────────────────
+  build-and-test:
+    name: Build & Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build production bundle
+        run: npm run build
+        env:
+          VITE_TMDB_API_KEY: ${{ secrets.VITE_TMDB_API_KEY }}
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: frontend/dist
+
+  # ────────────────────────────────────────────────────────────
+  # 2) DEVSECOPS: SAST + SECRET SCAN + DEPENDENCY SCAN
+  #    (these three run in parallel with the build job above)
+  # ────────────────────────────────────────────────────────────
+  sast-semgrep:
+    name: "DevSecOps: SAST (Semgrep)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Semgrep
+        uses: semgrep/semgrep-action@v1
+        with:
+          config: >-
+            p/owasp-top-ten
+            p/react
+            p/javascript
+        # Comment this whole job out if you don't want SAST gating your PRs.
+
+  secret-scan-gitleaks:
+    name: "DevSecOps: Secret Scan (Gitleaks)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  dependency-scan:
+    name: "DevSecOps: Dependency Audit (npm audit + Trivy fs)"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: npm audit (fails on high/critical)
+        run: npm audit --audit-level=high || true
+        # `|| true` keeps this informational; remove it to hard-fail the
+        # pipeline on high/critical vulnerable dependencies.
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          scan-ref: frontend
+          severity: CRITICAL,HIGH
+          exit-code: '0'   # set to '1' to fail the build on findings
+          format: table
+
+  code-quality-sonar:
+    name: "DevSecOps: Code Quality (SonarQube/SonarCloud)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        # Needs sonar-project.properties (included in repo root) and a
+        # SONAR_TOKEN secret. Comment this job out if you're not running
+        # SonarQube/SonarCloud.
+
+  # ────────────────────────────────────────────────────────────
+  # 3) BUILD & SCAN CONTAINER IMAGE, PUSH TO REGISTRY
+  # ────────────────────────────────────────────────────────────
+  docker-build-scan-push:
+    name: "Docker Build, Trivy Image Scan, Push"
+    needs: [build-and-test, sast-semgrep, secret-scan-gitleaks, dependency-scan]
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: meta
+        run: echo "tag=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (local, for scanning)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          load: true
+          tags: ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}
+          build-args: |
+            VITE_TMDB_API_KEY=${{ secrets.VITE_TMDB_API_KEY }}
+
+      - name: "DevSecOps: Trivy container image scan"
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}
+          format: sarif
+          output: trivy-image-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '0'   # set to '1' to block the pipeline on findings
+
+      - name: Upload Trivy results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-image-results.sarif
+
+      # ---- Docker Hub push ----
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Push to Docker Hub
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
+          build-args: |
+            VITE_TMDB_API_KEY=${{ secrets.VITE_TMDB_API_KEY }}
+
+      # ---- Optional: push to AWS ECR instead of/in addition to Docker Hub ----
+      # Uncomment this block if EKS will pull from ECR rather than Docker Hub.
+      # - name: Configure AWS credentials
+      #   uses: aws-actions/configure-aws-credentials@v4
+      #   with:
+      #     aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      #     aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      #     aws-region: ${{ secrets.AWS_REGION }}
+      # - name: Login to ECR
+      #   id: ecr-login
+      #   uses: aws-actions/amazon-ecr-login@v2
+      # - name: Push to ECR
+      #   uses: docker/build-push-action@v6
+      #   with:
+      #     context: ./frontend
+      #     push: true
+      #     tags: |
+      #       ${{ steps.ecr-login.outputs.registry }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}
+      #       ${{ steps.ecr-login.outputs.registry }}/${{ env.IMAGE_NAME }}:latest
+      #     build-args: |
+      #       VITE_TMDB_API_KEY=${{ secrets.VITE_TMDB_API_KEY }}
+
+  # ────────────────────────────────────────────────────────────
+  # 4a) DEPLOY TARGET: EC2 (docker compose over SSH)
+  #     Comment this whole job out if you are not deploying to EC2.
+  # ────────────────────────────────────────────────────────────
+  deploy-ec2:
+    name: "Deploy: EC2"
+    needs: docker-build-scan-push
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment: ec2-production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Copy docker-compose.yml to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "docker-compose.yml"
+          target: "~/netflix-clone"
+
+      - name: SSH in and redeploy
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd ~/netflix-clone
+            export IMAGE_NAME=${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}
+            export IMAGE_TAG=${{ needs.docker-build-scan-push.outputs.image_tag }}
+            docker login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }}
+            docker compose pull
+            docker compose up -d --remove-orphans
+            docker image prune -f
+
+  # ────────────────────────────────────────────────────────────
+  # 4b) DEPLOY TARGET: local kind cluster
+  #     kind runs on YOUR machine, not on GitHub's cloud runners, so this
+  #     job only works on a *self-hosted* runner registered from the same
+  #     machine/network as your kind cluster. If you're only deploying to
+  #     kind manually from your laptop (see README), comment this whole
+  #     job out and use `kubectl apply -f kubernetes/kind/` locally instead.
+  # ────────────────────────────────────────────────────────────
+  deploy-kind:
+    name: "Deploy: local kind cluster"
+    needs: docker-build-scan-push
+    runs-on: self-hosted   # <-- requires a self-hosted runner with kind + kubectl
+    if: false               # flip to `github.ref == 'refs/heads/main'` to enable
+    steps:
+      - uses: actions/checkout@v4
+      - name: Load image into kind
+        run: |
+          docker pull ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ needs.docker-build-scan-push.outputs.image_tag }}
+          docker tag ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ needs.docker-build-scan-push.outputs.image_tag }} netflix-clone-frontend:local
+          kind load docker-image netflix-clone-frontend:local --name netflix-clone
+      - name: Apply manifests
+        run: |
+          kubectl apply -f kubernetes/kind/namespace.yaml
+          kubectl apply -f kubernetes/kind/deployment.yaml
+          kubectl apply -f kubernetes/kind/service.yaml
+          kubectl rollout status deployment/netflix-frontend -n netflix-clone
+
+  # ────────────────────────────────────────────────────────────
+  # 4c) DEPLOY TARGET: EKS
+  #     Comment this whole job out if you are not deploying to EKS.
+  # ────────────────────────────────────────────────────────────
+  deploy-eks:
+    name: "Deploy: EKS"
+    needs: docker-build-scan-push
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment: eks-production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Update kubeconfig for EKS
+        run: aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }} --region ${{ secrets.AWS_REGION }}
+
+      - name: Set image tag in manifest
+        run: |
+          sed -i "s#<ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/netflix-clone-frontend:latest#${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ needs.docker-build-scan-push.outputs.image_tag }}#" kubernetes/eks/deployment.yaml
+          # If you push to ECR instead (see the commented block above),
+          # swap the sed target/replacement to point at your ECR repo URI.
+
+      - name: Apply manifests
+        run: |
+          kubectl apply -f kubernetes/eks/namespace.yaml
+          kubectl apply -f kubernetes/eks/deployment.yaml
+          kubectl apply -f kubernetes/eks/service.yaml
+          kubectl apply -f kubernetes/eks/ingress.yaml
+          kubectl rollout status deployment/netflix-frontend -n netflix-clone --timeout=180s
